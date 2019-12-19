@@ -20,7 +20,8 @@ NON_INTERACTIVE_SHELLS = attribute(
 )
 
 control "V-72037" do
-  title "Local initialization files must not execute world-writable programs."
+ title "The Red Hat Enterprise Linux operating system must be configured so
+ that local initialization files do not execute world-writable programs."
   if DISABLE_SLOW_CONTROLS
     desc "This control consistently takes a long to run and has been disabled
           using the DISABLE_SLOW_CONTROLS attribute."
@@ -44,12 +45,12 @@ world-writable programs.
 
 Check the system for world-writable files with the following command:
 
-# find / -perm -002 -type f -exec ls -ld {} \\; | more
+# find / -xdev -perm -002 -type f -exec ls -ld {} \\; | more
 
 For all files listed, check for their presence in the local initialization
 files with the following commands:
 
-Note: The example will be for a system that is configured to create users’ home
+Note: The example will be for a system that is configured to create users' home
 directories in the \"/home\" directory.
 
 # grep <file> /home/*/.*
@@ -78,17 +79,39 @@ files with the following command:
     #For each user, build and execute a find command that identifies initialization files
     #in a user's home directory.
     u.each do |user|
-      dotfiles = dotfiles + command("find #{user.home} -xdev -maxdepth 2 -name '.*' -type f").stdout.split("\n")
+      dotfiles = dotfiles + command("find #{user.home} -xdev -maxdepth 2 ( -name '.*' ! -name '.bash_history' ) -type f").stdout.split("\n")
     end
     ww_files = Set[]
-    ww_files = command('find / -perm -002 -type f -exec ls {} \;').stdout.lines
+    ww_files = command('find / -xdev -perm -002 -type f -exec ls {} \;').stdout.lines
+
+    #To reduce the number of commands ran, we use a pattern file in the grep command below
+    #So we don't have too long of a grep command, we chunk the list of ww_files
+    #into strings not longer than PATTERN_FILE_MAX_LENGTH
+    #Based on MAX_ARG_STRLEN, /usr/include/linux/binfmts.h
+    #We cut off 100 to leave room for the rest of the arguments
+    PATTERN_FILE_MAX_LENGTH=command("getconf PAGE_SIZE").stdout.to_i * 32 - 100
+    ww_chunked=[""]
+    ww_files.each do |item|
+      item = item.strip
+      if item.length + "\n".length > PATTERN_FILE_MAX_LENGTH
+        raise "Single pattern is longer than PATTERN_FILE_MAX_LENGTH"
+      end
+      if ww_chunked[-1].length + "\n".length + item.length > PATTERN_FILE_MAX_LENGTH
+        ww_chunked.append("")
+      end
+      ww_chunked[-1] += "\n" + item  # This will leave an extra newline at the beginning of chunks
+    end
+    ww_chunked = ww_chunked.map(&:strip)  # This gets rid of the beginning newlines
+    if ww_chunked[0] == ""
+      ww_chunked = []  # If we didn't have any ww_files, this will prevent an empty grep pattern
+    end
+
     #Check each dotfile for existence of each world-writeable file
     findings = Set[]
     dotfiles.each do |dotfile|
       dotfile = dotfile.strip
-      ww_files.each do |ww_file|
-        ww_file = ww_file.strip
-        count = command("grep -c \"#{ww_file}\" \"#{dotfile}\"").stdout.strip.to_i
+      ww_chunked.each do |ww_pattern_file|
+        count = command("grep -c -f <(echo \"#{ww_pattern_file}\") \"#{dotfile}\"").stdout.strip.to_i
         findings << dotfile if count > 0
       end
     end
