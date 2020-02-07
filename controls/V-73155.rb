@@ -76,7 +76,7 @@ Add the setting to lock the screensaver lock delay:
   tag "fix_id": "F-79601r2_fix"
 
   # @todo - dynamically gather system_db_path?
-  describe command("grep -i lock_delay #{system_db_path}/locks/*") do
+  describe command("grep -i lock-delay #{system_db_path}/locks/*") do
     its('stdout.strip') { should_not match %r{^$} }
   end if package('gnome-desktop3').installed?
   describe "The GNOME desktop is not installed" do
