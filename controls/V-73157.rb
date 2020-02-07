@@ -76,7 +76,7 @@ Add the setting to lock the session idle delay:
   tag "fix_id": "F-79603r1_fix"
 
   # @todo - dynamically gather system_db_path?
-  describe command("grep -i idle_delay #{system_db_path}/locks/*") do
+  describe command("grep -i idle-delay #{system_db_path}/locks/*") do
     its('stdout') { should_not match %r{^$} }
   end if package('gnome-desktop3').installed?
   describe "The GNOME desktop is not installed" do
